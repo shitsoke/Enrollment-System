@@ -64,26 +64,10 @@ namespace Database1
             }
         }
 
-        private void SaveButton_Click(object sender, EventArgs e)
-        {
-            if (!ValidateInputs())
-                return;
-
-            if (IsStudentAlreadyEnrolled())
-            {
-                MessageBox.Show("Student is Already Enrolled");
-                return;
-            }
-
-            SaveEnrollmentDetails();
-            SaveEnrollmentHeader();
-
-            MessageBox.Show("Subjects Enrolled");
-        }
 
         private bool ValidateInputs()
         {
-            // List of required fields
+           
             string[] requiredFields = {
         IdNumberTextBox.Text,
         NameTextBox.Text,
@@ -95,14 +79,14 @@ namespace Database1
         TotalUnitTextBox.Text
     };
 
-            // Check if any required field is empty
+            
             if (requiredFields.Any(string.IsNullOrEmpty))
             {
                 MessageBox.Show("Enter Required Fields");
                 return false;
             }
 
-            // Check if the datagrid is empty or only has the new row
+            
             if (EnrollmentGridView.Rows.Count <= 1)
             {
                 MessageBox.Show("Datagrid is empty. Please fill.");
@@ -129,94 +113,63 @@ namespace Database1
         {
             string query = "SELECT * FROM ENROLLMENTDETAILFILE WHERE 1=0";
             using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
-            using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
-            using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
             {
-                DataTable dataTable = new DataTable();
-                adapter.Fill(dataTable);
-
-                foreach (DataGridViewRow gridRow in EnrollmentGridView.Rows)
+                connection.Open();
+                using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
+                using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
                 {
-                    if (!gridRow.IsNewRow)
+                    DataTable dataTable = new DataTable();
+                    adapter.Fill(dataTable);
+
+                    foreach (DataGridViewRow gridRow in EnrollmentGridView.Rows)
                     {
-                        string edpCode = gridRow.Cells["EDPCode"].Value.ToString();
-                        if (!IsValidEnroll(edpCode))
+                        if (!gridRow.IsNewRow)
                         {
-                            MessageBox.Show("Student has already enrolled in the class");
-                            return;
+                            string edpCode = gridRow.Cells["EDPCode"].Value.ToString();
+                            if (!IsValidEnroll(edpCode))
+                            {
+                                MessageBox.Show("Student has already enrolled in the class");
+                                return;
+                            }
+
+                            
+                            var existingRow = dataTable.AsEnumerable().FirstOrDefault(row =>
+                                row.Field<long>("ENRDFSTUDID") == Convert.ToInt64(IdNumberTextBox.Text) &&
+                                row.Field<string>("ENRDFSTUDSUBJCODE") == gridRow.Cells["SubjectCode"].Value.ToString() &&
+                                row.Field<string>("ENRDFSTUDEDPCODE") == edpCode);
+
+                            if (existingRow == null)
+                            {
+                                DataRow dataRow = dataTable.NewRow();
+                                dataRow["ENRDFSTUDID"] = Convert.ToInt64(IdNumberTextBox.Text);
+                                dataRow["ENRDFSTUDSUBJCODE"] = gridRow.Cells["SubjectCode"].Value.ToString();
+                                dataRow["ENRDFSTUDEDPCODE"] = edpCode;
+                                dataRow["ENRDFSTUDSTATUS"] = "AC";
+                                dataTable.Rows.Add(dataRow);
+
+                                UpdateClassSize(edpCode);
+                            }
+                            else
+                            {
+                                MessageBox.Show("Duplicate enrollment detail detected.");
+                            }
                         }
-
-                        DataRow dataRow = dataTable.NewRow();
-                        dataRow["ENRDFSTUDID"] = Convert.ToInt64(IdNumberTextBox.Text);
-                        dataRow["ENRDFSTUDSUBJCODE"] = gridRow.Cells["SubjectCode"].Value.ToString();
-                        dataRow["ENRDFSTUDEDPCODE"] = edpCode;
-                        dataRow["ENRDFSTUDSTATUS"] = "";
-                        dataTable.Rows.Add(dataRow);
-
-                        UpdateClassSize(edpCode);
                     }
-                }
-                adapter.Update(dataTable);
-            }
-        }
 
-        private void SaveEnrollmentHeader()
-        {
-            string query = "SELECT * FROM ENROLLMENTHEADERFILE WHERE 1=0";
-            using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
-            using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
-            using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
-            {
-                DataTable dataTable = new DataTable();
-                adapter.Fill(dataTable);
+                    
+                    adapter.InsertCommand = builder.GetInsertCommand();
+                    adapter.UpdateCommand = builder.GetUpdateCommand();
 
-                DataRow dataRow = dataTable.NewRow();
-                dataRow["ENRHFSTUDID"] = Convert.ToInt64(IdNumberTextBox.Text);
-                dataRow["ENRHFSTUDATEENROLL"] = DateTimePicker.Text;
-                dataRow["ENRHFSTUDSCHLYR"] = YearTextBox.Text;
-                dataRow["ENRHFSTUDENCODER"] = EncodedTextBox.Text;
-                dataRow["ENRHFSTUDTOTALUNITS"] = Convert.ToDouble(TotalUnitTextBox.Text);
-                dataRow["ENRHFSTUDSTATUS"] = "EN";
-                dataTable.Rows.Add(dataRow);
-
-                adapter.Update(dataTable);
-            }
-        }
-
-        private bool IsValidEnroll(string edpCode)
-        {
-            string query = "SELECT * FROM ENROLLMENTDETAILFILE WHERE ENRDFSTUDID = @StudentID AND ENRDFSTUDEDPCODE = @EDPCode";
-            using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
-            using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
-            {
-                adapter.SelectCommand.Parameters.AddWithValue("@StudentID", IdNumberTextBox.Text);
-                adapter.SelectCommand.Parameters.AddWithValue("@EDPCode", edpCode);
-                DataTable dataTable = new DataTable();
-                adapter.Fill(dataTable);
-                return dataTable.Rows.Count == 0;
-            }
-        }
-
-        private void UpdateClassSize(string edpCode)
-        {
-            string query = "SELECT * FROM SUBJECTSCHEDFILE WHERE SSFEDPCODE = @EDPCode";
-            using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
-            using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
-            using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
-            {
-                adapter.SelectCommand.Parameters.AddWithValue("@EDPCode", edpCode.Trim());
-                DataTable dataTable = new DataTable();
-                adapter.Fill(dataTable);
-
-                if (dataTable.Rows.Count > 0)
-                {
-                    DataRow dataRow = dataTable.Rows[0];
-                    int classSize = Convert.ToInt32(dataRow["SSFCLASSSIZE"]) + 1;
-                    dataRow["SSFCLASSSIZE"] = classSize;
-
-                    if (classSize >= Convert.ToInt32(dataRow["SSFMAXSIZE"]))
+                    
+                    foreach (OleDbParameter parameter in adapter.InsertCommand.Parameters)
                     {
-                        dataRow["SSFSTATUS"] = "Cl";
+                        if (parameter.OleDbType == OleDbType.VarChar)
+                            parameter.Size = 255;
+                    }
+                    foreach (OleDbParameter parameter in adapter.UpdateCommand.Parameters)
+                    {
+                        if (parameter.OleDbType == OleDbType.VarChar)
+                            parameter.Size = 255; 
                     }
 
                     adapter.Update(dataTable);
@@ -224,6 +177,104 @@ namespace Database1
             }
         }
 
+        private void SaveEnrollmentHeader()
+        {
+            string query = "SELECT * FROM ENROLLMENTHEADERFILE WHERE 1=0";
+            using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
+            {
+                connection.Open();
+                using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
+                using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
+                {
+                    DataTable dataTable = new DataTable();
+                    adapter.Fill(dataTable);
+
+                    
+                    var existingRow = dataTable.AsEnumerable().FirstOrDefault(row =>
+                        row.Field<long>("ENRHFSTUDID") == Convert.ToInt64(IdNumberTextBox.Text));
+
+                    if (existingRow == null)
+                    {
+                        DataRow dataRow = dataTable.NewRow();
+                        dataRow["ENRHFSTUDID"] = Convert.ToInt64(IdNumberTextBox.Text);
+                        dataRow["ENRHFSTUDDATEENROLL"] = DateTimePicker.Text;
+                        dataRow["ENRHFSTUDSCHLYR"] = YearTextBox.Text;
+                        dataRow["ENRHFSTUDENCODER"] = EncodedTextBox.Text;
+                        dataRow["ENRHFSTUDTOTALUNITS"] = Convert.ToDouble(TotalUnitTextBox.Text);
+                        dataRow["ENRHFSTUDSTATUS"] = "EN";
+                        dataTable.Rows.Add(dataRow);
+
+                        adapter.InsertCommand = builder.GetInsertCommand();
+                        foreach (OleDbParameter parameter in adapter.InsertCommand.Parameters)
+                        {
+                            if (parameter.OleDbType == OleDbType.VarChar)
+                                parameter.Size = 255; 
+                        }
+
+                        adapter.Update(dataTable);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Student enrollment header already exists.");
+                    }
+                }
+            }
+        }
+
+            private bool IsValidEnroll(string edpCode)
+            {
+                string query = "SELECT * FROM ENROLLMENTDETAILFILE WHERE ENRDFSTUDID = @StudentID AND ENRDFSTUDEDPCODE = @EDPCode";
+                using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
+                using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
+                {
+                    adapter.SelectCommand.Parameters.AddWithValue("@StudentID", IdNumberTextBox.Text);
+                    adapter.SelectCommand.Parameters.AddWithValue("@EDPCode", edpCode);
+                    DataTable dataTable = new DataTable();
+                    adapter.Fill(dataTable);
+                    return dataTable.Rows.Count == 0;
+                }
+            }
+
+        private void UpdateClassSize(string edpCode)
+        {
+            string query = "SELECT * FROM SUBJECTSCHEDFILE WHERE SSFEDPCODE = @EDPCode";
+            using (OleDbConnection connection = new OleDbConnection(DatabaseConnectionString.connectionString))
+            {
+                connection.Open();
+                using (OleDbDataAdapter adapter = new OleDbDataAdapter(query, connection))
+                using (OleDbCommandBuilder builder = new OleDbCommandBuilder(adapter))
+                {
+                    adapter.SelectCommand.Parameters.Add("@EDPCode", OleDbType.VarChar, 255).Value = edpCode.Trim();
+
+                    DataTable dataTable = new DataTable();
+                    adapter.Fill(dataTable);
+
+                    if (dataTable.Rows.Count > 0)
+                    {
+                        DataRow dataRow = dataTable.Rows[0];
+
+                        int classSize = DBNull.Value.Equals(dataRow["SSFCLASSSIZE"]) ? 0 : Convert.ToInt32(dataRow["SSFCLASSSIZE"]);
+                        classSize++;
+                        dataRow["SSFCLASSSIZE"] = classSize;
+
+                        if (classSize >= Convert.ToInt32(dataRow["SSFMAXSIZE"]))
+                        {
+                            dataRow["SSFSTATUS"] = "Cl";
+                        }
+
+                        adapter.UpdateCommand = builder.GetUpdateCommand();
+
+                        foreach (OleDbParameter parameter in adapter.UpdateCommand.Parameters)
+                        {
+                            if (parameter.OleDbType == OleDbType.VarChar)
+                                parameter.Size = 255; 
+                        }
+
+                        adapter.Update(dataTable);
+                    }
+                }
+            }
+        }
 
         private void LoadStudentDetails()
         {
@@ -238,6 +289,11 @@ namespace Database1
                 if (dataTable.Rows.Count > 0)
                 {
                     DataRow dataRow = dataTable.Rows[0];
+
+                    NameTextBox.Clear();
+                    CourseTextBox.Clear();
+                    YearTextBox.Clear();
+
                     NameTextBox.Text = $"{dataRow["STFSTUDFNAME"]} {dataRow["STFSTUDMNAME"]} {dataRow["STFSTUDLNAME"]}";
                     CourseTextBox.Text = dataRow["STFSTUDCOURSE"].ToString();
                     YearTextBox.Text = dataRow["STFSTUDYEAR"].ToString();
@@ -248,7 +304,6 @@ namespace Database1
                 }
             }
         }
-
 
         private void AddSubjectToGrid()
         {
@@ -303,7 +358,6 @@ namespace Database1
             }
         }
 
-
         private bool CheckDupesGrid(string edpCode)
         {
             foreach (DataGridViewRow row in EnrollmentGridView.Rows)
@@ -341,6 +395,38 @@ namespace Database1
             {
                 LoadStudentDetails();
             }
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(IdNumberTextBox.Text) ||
+                string.IsNullOrWhiteSpace(NameTextBox.Text) ||
+                string.IsNullOrWhiteSpace(CourseTextBox.Text) ||
+                string.IsNullOrWhiteSpace(EdpCodeTextBox.Text) ||
+                string.IsNullOrWhiteSpace(YearTextBox.Text) ||
+                string.IsNullOrWhiteSpace(EncodedTextBox.Text) ||
+                string.IsNullOrWhiteSpace(DateTimePicker.Text) ||
+                string.IsNullOrWhiteSpace(TotalUnitTextBox.Text))
+            {
+                MessageBox.Show("Enter Required Fields");
+                return;
+            }
+
+            if (!double.TryParse(TotalUnitTextBox.Text, out double totalUnits))
+            {
+                return;
+            }
+
+            if (IsStudentAlreadyEnrolled())
+            {
+                MessageBox.Show("Student is Already Enrolled");
+                return;
+            }
+
+            SaveEnrollmentDetails();
+            SaveEnrollmentHeader();
+
+            MessageBox.Show("Subjects Enrolled");
         }
     }
 }
